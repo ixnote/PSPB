@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pspba
+          POSTGRES_PASSWORD: pspba
+          POSTGRES_DB: pspba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pspba -d pspba"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgresql://pspba:pspba@localhost:5432/pspba
+          JWT_SECRET: ci-test-secret-at-least-32-characters-long
+
+      - name: Run API tests
+        run: npm run test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://pspba:pspba@localhost:5432/pspba
+          JWT_SECRET: ci-test-secret-at-least-32-characters-long
+
+      - name: Build frontend
+        run: npm run build

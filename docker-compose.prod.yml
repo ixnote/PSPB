@@ -1,0 +1,48 @@
+# Production-style: API + PostgreSQL + Frontend (nginx serving built SPA, /api proxied to API)
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# Then: create admin user (do not use /api/auth/seed in production)
+# Site: http://localhost (frontend) — /api proxied to API
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pspba}
+      POSTGRES_USER: ${POSTGRES_USER:-pspba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pspba} -d ${POSTGRES_DB:-pspba}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pspba}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pspba}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (min 32 chars)}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run db:migrate && node src/server.js"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
